@@ -1,16 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { getWordOfTheDay } from "../lib/getWordOfTheDay";
+import { useState, useEffect } from "react";
+import { getWordOfTheDay, getDayIndex } from "../lib/getWordOfTheDay";
 
 export default function HomePage() {
   //
-  // === MOT DU JOUR ===
+  // === MOT DU JOUR & IDENTIFIANT DU JOUR ===
   //
   // On récupère ici :
   // - "word" : le mot du jour (ex: "PYTHON")
   //
   const { word } = getWordOfTheDay();
+  // Index du jour (nombre de jours depuis START_DATE)
+  const dayIndex = getDayIndex();
+  // Clé utilisée pour sauvegarder / charger la partie du jour dans localStorage
+  const STORAGE_KEY = `sutom-game-${dayIndex}`;
 
   //
   // === CONFIG DU JEU ===
@@ -64,6 +68,80 @@ export default function HomePage() {
   // 7) État des touches du clavier virtuel (par lettre)
   // On stocke pour chaque lettre son "meilleur" état déjà vu : correct > present > absent > empty
   const [keyStates, setKeyStates] = useState<Record<string, CellState>>({});
+
+  //
+  // === PERSISTENCE LOCALE : RECHARGER LA PARTIE DU JOUR SI ELLE EXISTE ===
+  //
+  useEffect(() => {
+    // localStorage n'existe que dans le navigateur
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+
+      const saved = JSON.parse(raw) as {
+        word: string;
+        grid: Cell[][];
+        currentAttempt: number;
+        currentInput: string;
+        gameOver: boolean;
+        hasWon: boolean;
+        statusMessage: string;
+        keyStates: Record<string, CellState>;
+      };
+
+      // Si le mot a changé (ex: tu as modifié WORD_LIST), on ignore l'état sauvegardé
+      if (saved.word !== word) {
+        return;
+      }
+
+      // On restaure toute la partie
+      setGrid(saved.grid);
+      setCurrentAttempt(saved.currentAttempt ?? 0);
+      setCurrentInput(saved.currentInput ?? "");
+      setGameOver(saved.gameOver ?? false);
+      setHasWon(saved.hasWon ?? false);
+      setStatusMessage(saved.statusMessage ?? "");
+      setKeyStates(saved.keyStates ?? {});
+    } catch (err) {
+      console.error("[SUTOM] Erreur lors du chargement de la partie :", err);
+    }
+  }, [STORAGE_KEY, word]);
+
+  //
+  // === PERSISTENCE LOCALE : SAUVEGARDER À CHAQUE CHANGEMENT D'ÉTAT ===
+  //
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const payload = {
+      word,
+      grid,
+      currentAttempt,
+      currentInput,
+      gameOver,
+      hasWon,
+      statusMessage,
+      keyStates,
+    };
+
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (err) {
+      console.error("[SUTOM] Erreur lors de l'enregistrement de la partie :", err);
+    }
+  }, [
+    STORAGE_KEY,
+    word,
+    grid,
+    currentAttempt,
+    currentInput,
+    gameOver,
+    hasWon,
+    statusMessage,
+    keyStates,
+  ]);
 
   //
   // === FONCTION UTILITAIRE : prioriser les états des touches ===
@@ -275,7 +353,7 @@ export default function HomePage() {
                         // Jaune = lettre présente mais mal placée
                         ? "bg-yellow-400 border-yellow-400 text-black"
                         : cell.state === "absent"
-                        // Bleu/gris = lettre absente
+                        // Bleu = lettre absente (dans la grille, pas le clavier)
                         ? "bg-blue-700 border-blue-700 text-white"
                         // Case vide (non encore jouée)
                         : "border-blue-700 bg-neutral-800 text-white"
