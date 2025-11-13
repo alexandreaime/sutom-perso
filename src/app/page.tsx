@@ -2,6 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { getWordOfTheDay, getDayIndex } from "../lib/getWordOfTheDay";
+import { GameBoard } from "../components/GameBoard";
+import { Keyboard } from "../components/Keyboard";
+import { StatusBar } from "../components/StatusBar";
+
+//
+// === TYPES POUR LA GRILLE ===
+//
+// Chaque case de la grille contient : une lettre + un état (pour la couleur)
+export type CellState = "empty" | "correct" | "present" | "absent";
+export type Cell = { letter: string; state: CellState };
 
 export default function HomePage() {
   //
@@ -20,13 +30,6 @@ export default function HomePage() {
   // === CONFIG DU JEU ===
   //
   const MAX_ATTEMPTS = 6; // nombre de lignes / essais
-
-  //
-  // === TYPES POUR LA GRILLE ===
-  //
-  // Chaque case de la grille contient : une lettre + un état (pour la couleur)
-  type CellState = "empty" | "correct" | "present" | "absent";
-  type Cell = { letter: string; state: CellState };
 
   //
   // === LAYOUT DU CLAVIER (AZERTY) ===
@@ -278,39 +281,6 @@ export default function HomePage() {
   }
 
   //
-  // === STYLE DES TOUCHES DU CLAVIER EN FONCTION DE LEUR ÉTAT ===
-  //
-  function getKeyClassName(key: string): string {
-    // Cas spéciaux : ENTER / BACKSPACE (touches de fonction)
-    const baseClasses =
-      "flex-1 min-w-[2.2rem] px-2 py-2 text-sm font-semibold rounded-md border text-center";
-
-    if (key === "ENTER" || key === "BACKSPACE") {
-      return baseClasses + " bg-neutral-600 border-neutral-700 text-white";
-    }
-
-    const state: CellState = keyStates[key] ?? "empty";
-
-    if (state === "correct") {
-      // Rouge comme sur SUTOM
-      return baseClasses + " bg-red-600 border-red-600 text-white";
-    }
-
-    if (state === "present") {
-      // Jaune
-      return baseClasses + " bg-yellow-400 border-yellow-400 text-black";
-    }
-
-    if (state === "absent") {
-      // Lettre absente → gris foncé + texte gris (comme SUTOM)
-      return baseClasses + " bg-neutral-700 border-neutral-800 text-neutral-400";
-    }
-
-    // empty : touche jamais utilisée
-    return baseClasses + " bg-neutral-700 border-neutral-800 text-white";
-  }
-
-  //
   // === RENDER (affichage) ===
   //
   return (
@@ -326,48 +296,13 @@ export default function HomePage() {
           Rouge : lettre bien placée · Jaune : lettre présente · Gris : lettre absente
         </p>
 
-        {/* ==== Message de statut (victoire / défaite) ==== */}
-        <div className="min-h-[1.5rem] mb-4 text-center text-sm">
-          {statusMessage && (
-            <span className={hasWon ? "text-emerald-400" : "text-rose-300"}>
-              {statusMessage}
-            </span>
-          )}
-        </div>
+        {/* Barre de statut (victoire / défaite / info) */}
+        <StatusBar message={statusMessage} hasWon={hasWon} />
 
-        {/* ==== Grille du jeu ==== */}
-        <div className="space-y-2 mb-4">
-          {grid.map((row, rowIndex) => (
-            <div key={rowIndex} className="flex gap-1 justify-center">
-              {row.map((cell, colIndex) => (
-                <div
-                  key={colIndex}
-                  className={`
-                    w-10 h-10 rounded-sm flex items-center justify-center text-xl font-bold
-                    border
-                    ${
-                      cell.state === "correct"
-                        // Rouge = lettre bien placée
-                        ? "bg-red-600 border-red-600 text-white"
-                        : cell.state === "present"
-                        // Jaune = lettre présente mais mal placée
-                        ? "bg-yellow-400 border-yellow-400 text-black"
-                        : cell.state === "absent"
-                        // Bleu = lettre absente (dans la grille, pas le clavier)
-                        ? "bg-blue-700 border-blue-700 text-white"
-                        // Case vide (non encore jouée)
-                        : "border-blue-700 bg-neutral-800 text-white"
-                    }
-                  `}
-                >
-                  {cell.letter}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
+        {/* Grille du jeu */}
+        <GameBoard grid={grid} />
 
-        {/* ==== Saisie du mot ==== */}
+        {/* Saisie du mot */}
         <form
           className="mt-2 mb-4 flex gap-2"
           onSubmit={(e) => {
@@ -396,27 +331,13 @@ export default function HomePage() {
           </button>
         </form>
 
-        {/* ==== Clavier virtuel AZERTY ==== */}
-        <div className="space-y-2">
-          {KEY_ROWS.map((row, rowIndex) => (
-            <div key={rowIndex} className="flex gap-1 justify-center">
-              {row.map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => handleKeyClick(key)}
-                  disabled={gameOver}
-                  className={
-                    getKeyClassName(key) +
-                    " disabled:opacity-50 disabled:cursor-default"
-                  }
-                >
-                  {key === "BACKSPACE" ? "⌫" : key === "ENTER" ? "↵" : key}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
+        {/* Clavier virtuel AZERTY */}
+        <Keyboard
+          keyRows={KEY_ROWS}
+          keyStates={keyStates}
+          disabled={gameOver}
+          onKeyClick={handleKeyClick}
+        />
       </div>
     </main>
   );
