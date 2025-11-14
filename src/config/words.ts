@@ -26,7 +26,7 @@ export const WORD_LIST: string[] = [
 // 📅 Date de départ : jour 0 = WORD_LIST[0]
 // Le mot du jour est choisi en fonction du nombre de jours écoulés depuis cette date.
 // Exemple : si tu lances le jeu au travail le 1er décembre 2025, tu peux mettre :
-export const START_DATE = new Date("2025-12-01T00:00:00+01:00");
+export const START_DATE = new Date("2025-11-01T00:00:00+01:00");
 
 // 🔍 Petit garde-fou minimal : on vérifie qu'il y a au moins 1 mot.
 if (WORD_LIST.length === 0) {

@@ -1,21 +1,24 @@
 "use client";
 
 type StatusBarProps = {
-  message: string;     // texte à afficher (victoire, défaite, info…)
-  hasWon: boolean;     // indique si la partie est gagnée (pour la couleur)
+  message: string; // texte à afficher (victoire, défaite, info…)
+  hasWon: boolean; // indique si la partie est gagnée (pour la couleur)
 };
 
 /**
- * Composant très simple qui affiche un message de statut
- * en dessous du titre et au-dessus de la grille.
- *
- * - Si aucun message → on réserve simplement l’espace (évite les sauts de layout).
- * - Si gagné → texte vert
- * - Si perdu → texte rose
+ * Barre de statut simple :
+ * - Affiche un message de victoire/défaite/information
+ * - Réserve de la place même sans message pour éviter les sauts de layout
+ * - Utilise aria-live pour être annoncée aux lecteurs d'écran
  */
 export function StatusBar({ message, hasWon }: StatusBarProps) {
   return (
-    <div className="min-h-[1.5rem] mb-4 text-center text-sm">
+    <div
+      className="min-h-[1.75rem] mb-4 text-center text-sm sm:text-base"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
       {message ? (
         <span className={hasWon ? "text-emerald-400" : "text-rose-300"}>
           {message}

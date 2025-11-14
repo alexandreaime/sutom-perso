@@ -1,82 +1,89 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getWordOfTheDay, getDayIndex } from "../lib/getWordOfTheDay";
 import { GameBoard } from "../components/GameBoard";
 import { Keyboard } from "../components/Keyboard";
 import { StatusBar } from "../components/StatusBar";
 
-//
-// === TYPES POUR LA GRILLE ===
-//
-// Chaque case de la grille contient : une lettre + un état (pour la couleur)
-export type CellState = "empty" | "correct" | "present" | "absent";
-export type Cell = { letter: string; state: CellState };
+// Types internes pour la logique du jeu
+type CellState = "empty" | "correct" | "present" | "absent";
+type Cell = { letter: string; state: CellState };
 
 export default function HomePage() {
   //
   // === MOT DU JOUR & IDENTIFIANT DU JOUR ===
   //
-  // On récupère ici :
-  // - "word" : le mot du jour (ex: "PYTHON")
-  //
   const { word } = getWordOfTheDay();
-  // Index du jour (nombre de jours depuis START_DATE)
   const dayIndex = getDayIndex();
-  // Clé utilisée pour sauvegarder / charger la partie du jour dans localStorage
   const STORAGE_KEY = `sutom-game-${dayIndex}`;
+
+  // Date affichée dans le header
+  const today = new Date();
+  const formattedDate = today.toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 
   //
   // === CONFIG DU JEU ===
   //
-  const MAX_ATTEMPTS = 6; // nombre de lignes / essais
-
-  //
-  // === LAYOUT DU CLAVIER (AZERTY) ===
-  //
-  const KEY_ROWS: string[][] = [
-    ["A", "Z", "E", "R", "T", "Y", "U", "I", "O", "P"],
-    ["Q", "S", "D", "F", "G", "H", "J", "K", "L", "M"],
-    ["ENTER", "W", "X", "C", "V", "B", "N", "BACKSPACE"],
-  ];
+  const MAX_ATTEMPTS = 6;
 
   //
   // === ÉTATS DU JEU ===
   //
 
-  // 1) La grille : tableau 2D de cases
-  // grid[0] = première ligne (essai 1)
-  // grid[0][2] = case en colonne 3 de la ligne 1
-  const [grid, setGrid] = useState<Cell[][]>(
+  // 1) Grille : contiendra les lignes déjà jouées (lettres + états)
+  const [grid, setGrid] = useState<Cell[][]>(() =>
     Array.from({ length: MAX_ATTEMPTS }, () =>
       Array.from({ length: word.length }, () => ({ letter: "", state: "empty" }))
     )
   );
 
-  // 2) La ligne active (0 = première ligne, 1 = deuxième...)
+  // 2) Ligne active
   const [currentAttempt, setCurrentAttempt] = useState(0);
 
-  // 3) L’input dans lequel l’utilisateur tape une proposition
+  // 3) Saisie actuelle (mot complet tapé par l'utilisateur)
   const [currentInput, setCurrentInput] = useState("");
 
-  // 4) Savoir si la partie est finie (gagné ou perdu)
+  // 4) Fin de partie
   const [gameOver, setGameOver] = useState(false);
 
-  // 5) Savoir si le joueur a gagné
+  // 5) Victoire ?
   const [hasWon, setHasWon] = useState(false);
 
-  // 6) Message affiché sous la grille (victoire / défaite / info)
+  // 6) Message affiché (victoire / défaite)
   const [statusMessage, setStatusMessage] = useState("");
 
-  // 7) État des touches du clavier virtuel (par lettre)
-  // On stocke pour chaque lettre son "meilleur" état déjà vu : correct > present > absent > empty
+  // 7) État des touches du clavier
   const [keyStates, setKeyStates] = useState<Record<string, CellState>>({});
+
+  // 8) Ligne récemment validée (pour l’animation lettre par lettre)
+  const [lastSubmittedRow, setLastSubmittedRow] = useState<number | null>(null);
+
+  // 9) Lettres connues comme correctes par position (pour les montrer en bleu dans la ligne active)
+  const [knownCorrect, setKnownCorrect] = useState<(string | null)[]>(() => {
+    const arr = Array(word.length).fill(null) as (string | null)[];
+    // Première lettre connue dès le départ
+    arr[0] = word[0];
+    return arr;
+  });
+
+  // 10) Affichage du popup "Règles"
+  const [showRules, setShowRules] = useState(false);
+
+  // 11) Référence vers l’input pour le focus
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // 12) Animation en cours ? (révélation des couleurs lettre par lettre)
+  const [isRevealing, setIsRevealing] = useState(false);
 
   //
   // === PERSISTENCE LOCALE : RECHARGER LA PARTIE DU JOUR SI ELLE EXISTE ===
   //
   useEffect(() => {
-    // localStorage n'existe que dans le navigateur
     if (typeof window === "undefined") return;
 
     try {
@@ -92,14 +99,14 @@ export default function HomePage() {
         hasWon: boolean;
         statusMessage: string;
         keyStates: Record<string, CellState>;
+        lastSubmittedRow: number | null;
+        knownCorrect: (string | null)[];
       };
 
-      // Si le mot a changé (ex: tu as modifié WORD_LIST), on ignore l'état sauvegardé
       if (saved.word !== word) {
         return;
       }
 
-      // On restaure toute la partie
       setGrid(saved.grid);
       setCurrentAttempt(saved.currentAttempt ?? 0);
       setCurrentInput(saved.currentInput ?? "");
@@ -107,6 +114,11 @@ export default function HomePage() {
       setHasWon(saved.hasWon ?? false);
       setStatusMessage(saved.statusMessage ?? "");
       setKeyStates(saved.keyStates ?? {});
+      setLastSubmittedRow(saved.lastSubmittedRow ?? null);
+
+      if (saved.knownCorrect && Array.isArray(saved.knownCorrect)) {
+        setKnownCorrect(saved.knownCorrect);
+      }
     } catch (err) {
       console.error("[SUTOM] Erreur lors du chargement de la partie :", err);
     }
@@ -127,6 +139,8 @@ export default function HomePage() {
       hasWon,
       statusMessage,
       keyStates,
+      lastSubmittedRow,
+      knownCorrect,
     };
 
     try {
@@ -144,12 +158,22 @@ export default function HomePage() {
     hasWon,
     statusMessage,
     keyStates,
+    lastSubmittedRow,
+    knownCorrect,
   ]);
+
+  //
+  // === FOCUS SUR L'INPUT QUAND C'EST POSSIBLE ===
+  //
+  useEffect(() => {
+    if (!gameOver) {
+      inputRef.current?.focus();
+    }
+  }, [gameOver]);
 
   //
   // === FONCTION UTILITAIRE : prioriser les états des touches ===
   //
-  // Si une lettre a déjà été vue "correct", on ne veut pas la repasser en "present" ou "absent", etc.
   function mergeKeyState(previous: CellState | undefined, next: CellState): CellState {
     const priority: Record<CellState, number> = {
       correct: 3,
@@ -166,104 +190,143 @@ export default function HomePage() {
   // === LOGIQUE : quand l'utilisateur valide son mot ===
   //
   function handleSubmit() {
-    // Si la partie est déjà finie, on ne fait rien
-    if (gameOver) return;
+    if (gameOver || isRevealing) return;
 
-    const guess = currentInput.trim().toUpperCase();
+    const trimmed = currentInput.trim().toUpperCase();
+    const expectedLength = word.length;
 
-    // Vérification simple : la longueur doit être exacte
-    if (guess.length !== word.length) {
-      alert(`Le mot doit faire ${word.length} lettres.`);
+    // 1) Longueur exacte
+    if (trimmed.length !== expectedLength) {
+      alert(`Le mot doit faire ${word.length} lettres`);
       return;
     }
 
-    // On crée une copie "propre" de la grille (React ne doit PAS muter directement)
-    const newGrid = [...grid];
+    // 2) Le mot doit commencer par la première lettre révélée
+    if (trimmed[0] !== word[0]) {
+      alert(`Le mot doit commencer par la lettre "${word[0]}"`);
+      return;
+    }
 
-    // On veut calculer les états :
-    // 1) correct (bien placé)
-    // 2) present (présent mais mal placé)
-    // 3) absent (pas dans le mot)
+    const guess = trimmed;
     const guessLetters = guess.split("");
     const secretLetters = word.split("");
 
-    // Résultat initial : tout est absent
     const result: CellState[] = Array(word.length).fill("absent");
 
-    // --- Étape 1 : correct (lettres parfaitement placées) ---
+    // Étape 1 : correct
     for (let i = 0; i < word.length; i++) {
       if (guessLetters[i] === secretLetters[i]) {
         result[i] = "correct";
-        secretLetters[i] = ""; // on "retire" cette lettre du secret
+        secretLetters[i] = "";
       }
     }
 
-    // --- Étape 2 : present (lettres présentes mais mal placées) ---
+    // Étape 2 : present
     for (let i = 0; i < word.length; i++) {
       if (result[i] === "correct") continue;
-
       const letter = guessLetters[i];
       const idx = secretLetters.indexOf(letter);
-
       if (idx !== -1) {
         result[i] = "present";
-        secretLetters[idx] = ""; // on consomme la lettre
+        secretLetters[idx] = "";
       }
     }
 
-    // --- Remplir la ligne dans la grille avec lettres + états ---
+    const attemptIndex = currentAttempt;
+
+    // Màj des lettres connues comme correctes
+    setKnownCorrect((prev) => {
+      const next = [...prev];
+      for (let i = 0; i < word.length; i++) {
+        if (result[i] === "correct") {
+          next[i] = word[i];
+        }
+      }
+      return next;
+    });
+
+    // Clone de la grille
+    const newGrid: Cell[][] = grid.map((row) =>
+      row.map((cell) => ({ ...cell }))
+    );
+
+    // Remplir la ligne jouée :
+    // - case 0 : toujours la 1ère lettre du mot
+    // - autres cases : lettres tapées, couleur révélée plus tard
     for (let i = 0; i < word.length; i++) {
-      newGrid[currentAttempt][i] = {
-        letter: guessLetters[i],
-        state: result[i],
-      };
+      if (i === 0) {
+        newGrid[attemptIndex][i] = {
+          letter: word[0],
+          state: "correct",
+        };
+      } else {
+        newGrid[attemptIndex][i] = {
+          letter: guessLetters[i],
+          state: "empty",
+        };
+      }
     }
 
-    // Met à jour l’état React de la grille
     setGrid(newGrid);
+    setLastSubmittedRow(attemptIndex);
+    setIsRevealing(true);
 
-    // --- Mettre à jour les états des touches du clavier ---
+    // Màj clavier
     const newKeyStates: Record<string, CellState> = { ...keyStates };
     for (let i = 0; i < word.length; i++) {
       const letter = guessLetters[i];
       const state = result[i];
-      // On ignore les cases "empty" (normalement il n'y en a pas ici)
       if (state === "empty") continue;
       newKeyStates[letter] = mergeKeyState(newKeyStates[letter], state);
     }
     setKeyStates(newKeyStates);
 
-    // Vérifier si le joueur a trouvé le mot
     const isCorrectWord = guess === word;
+    const isLastAttempt = attemptIndex + 1 >= MAX_ATTEMPTS;
 
     if (isCorrectWord) {
       setHasWon(true);
       setGameOver(true);
       setStatusMessage(`Bravo ! Tu as trouvé le mot du jour 🎉`);
       setCurrentInput("");
-      return;
-    }
-
-    // Si ce n'est pas trouvé et qu'on a utilisé la dernière tentative -> perdu
-    if (currentAttempt + 1 >= MAX_ATTEMPTS) {
+    } else if (isLastAttempt) {
       setHasWon(false);
       setGameOver(true);
       setStatusMessage(`C'est raté ! Le mot du jour était : ${word}.`);
       setCurrentInput("");
-      return;
     }
 
-    // Sinon, on passe à l'essai suivant
-    setCurrentAttempt(currentAttempt + 1);
-    setCurrentInput("");
-    setStatusMessage("");
+    // Révélation progressive des couleurs à partir de la 2e lettre
+    for (let i = 1; i < word.length; i++) {
+      setTimeout(() => {
+        setGrid((prev) => {
+          const copy = prev.map((row) => row.map((cell) => ({ ...cell })));
+          copy[attemptIndex][i].state = result[i];
+          return copy;
+        });
+
+        // Quand la dernière lettre est révélée, on termine l'animation
+        if (i === word.length - 1) {
+          setIsRevealing(false);
+
+          // Si la partie continue, on ne passe à la ligne suivante
+          // QU'UNE FOIS que toutes les couleurs sont révélées
+          if (!isCorrectWord && !isLastAttempt) {
+            setCurrentAttempt(attemptIndex + 1);
+            setCurrentInput("");
+            setStatusMessage("");
+            inputRef.current?.focus();
+          }
+        }
+      }, i * 500);
+    }
   }
 
   //
   // === LOGIQUE : gestion des clics sur le clavier virtuel ===
   //
   function handleKeyClick(key: string) {
-    if (gameOver) return;
+    if (gameOver || isRevealing) return;
 
     if (key === "ENTER") {
       handleSubmit();
@@ -272,37 +335,59 @@ export default function HomePage() {
 
     if (key === "BACKSPACE") {
       setCurrentInput((prev) => prev.slice(0, -1));
+      inputRef.current?.focus();
       return;
     }
 
-    // Lettre normale
-    if (currentInput.length >= word.length) return; // on ne dépasse pas la longueur du mot
+    const maxLen = word.length;
+    if (currentInput.length >= maxLen) return;
+
     setCurrentInput((prev) => (prev + key).toUpperCase());
+    inputRef.current?.focus();
   }
 
   //
-  // === RENDER (affichage) ===
+  // === RENDER ===
   //
   return (
-    <main className="min-h-screen flex items-center justify-center bg-neutral-900 text-slate-100">
-      <div className="w-full max-w-md mx-4 rounded-2xl bg-neutral-800 border border-neutral-700 shadow-xl p-6">
-        {/* Titre */}
-        <h1 className="text-2xl font-bold text-center mb-1">SUTOM perso</h1>
-        <p className="text-sm text-slate-300 text-center">
-          Devine le mot du jour en 6 essais
-        </p>
-        {/* Règles rapides */}
-        <p className="text-xs text-slate-400 text-center mb-4">
-          Rouge : lettre bien placée · Jaune : lettre présente · Gris : lettre absente
-        </p>
+    <main
+      className="min-h-screen flex items-center justify-center bg-neutral-900 text-slate-100 px-2"
+      aria-label="Jeu de lettres SUTOM personnalisé"
+    >
+      <div className="w-full max-w-xl mx-auto rounded-2xl bg-neutral-800 border border-neutral-700 shadow-xl p-4 sm:p-6 relative">
+        {/* Header */}
+        <header className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold">SUTOM perso</h1>
+            <p className="text-xs sm:text-sm text-slate-300">
+              {formattedDate} · Jour {dayIndex + 1}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowRules(true)}
+            className="text-xs sm:text-sm px-3 py-1 rounded-full border border-slate-200 bg-neutral-700 hover:bg-neutral-600"
+            aria-haspopup="dialog"
+          >
+            Règles du jeu
+          </button>
+        </header>
 
-        {/* Barre de statut (victoire / défaite / info) */}
+        {/* Barre de statut */}
         <StatusBar message={statusMessage} hasWon={hasWon} />
 
-        {/* Grille du jeu */}
-        <GameBoard grid={grid} />
+        {/* Grille */}
+        <GameBoard
+          grid={grid}
+          animateRowIndex={lastSubmittedRow}
+          currentAttempt={currentAttempt}
+          knownCorrect={knownCorrect}
+          currentInput={currentInput}
+          gameOver={gameOver}
+          isRevealing={isRevealing}
+        />
 
-        {/* Saisie du mot */}
+        {/* Saisie */}
         <form
           className="mt-2 mb-4 flex gap-2"
           onSubmit={(e) => {
@@ -311,12 +396,17 @@ export default function HomePage() {
           }}
         >
           <input
+            ref={inputRef}
             type="text"
             value={currentInput}
-            onChange={(e) => setCurrentInput(e.target.value.toUpperCase())}
+            onChange={(e) => {
+              const maxLen = word.length;
+              const raw = e.target.value.toUpperCase().slice(0, maxLen);
+              setCurrentInput(raw);
+            }}
             maxLength={word.length}
-            disabled={gameOver}
-            className="flex-1 px-3 py-2 rounded-lg bg-neutral-700 border border-neutral-600 text-slate-100 text-lg tracking-widest text-center disabled:opacity-50"
+            disabled={gameOver || isRevealing}
+            className="flex-1 px-3 py-3 rounded-lg bg-neutral-700 border border-neutral-600 text-slate-100 text-lg sm:text-xl tracking-widest text-center disabled:opacity-50"
             placeholder={
               gameOver ? "Partie terminée" : `Mot de ${word.length} lettres`
             }
@@ -324,20 +414,73 @@ export default function HomePage() {
 
           <button
             type="submit"
-            disabled={gameOver}
-            className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold disabled:opacity-50"
+            disabled={gameOver || isRevealing}
+            className="px-4 sm:px-5 py-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold disabled:opacity-50 text-sm sm:text-base"
           >
             OK
           </button>
         </form>
 
-        {/* Clavier virtuel AZERTY */}
+        {/* Clavier */}
         <Keyboard
-          keyRows={KEY_ROWS}
+          keyRows={[
+            ["A", "Z", "E", "R", "T", "Y", "U", "I", "O", "P"],
+            ["Q", "S", "D", "F", "G", "H", "J", "K", "L", "M"],
+            ["ENTER", "W", "X", "C", "V", "B", "N", "BACKSPACE"],
+          ]}
           keyStates={keyStates}
-          disabled={gameOver}
+          disabled={gameOver || isRevealing}
           onKeyClick={handleKeyClick}
         />
+
+        {/* Popup Règles du jeu */}
+        {showRules && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rules-title"
+          >
+            <div className="bg-neutral-800 border border-neutral-600 rounded-xl p-4 w-full max-w-sm mx-4">
+              <div className="flex items-center justify-between mb-2">
+                <h2 id="rules-title" className="text-lg font-semibold">
+                  Règles du jeu
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setShowRules(false)}
+                  className="text-sm px-2 py-1 rounded hover:bg-neutral-700"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="text-sm text-slate-200 space-y-2">
+                <p>
+                  Tu dois deviner le mot du jour en 6 essais. La première lettre est
+                  toujours révélée et bloquée.
+                </p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Rouge : lettre bien placée.</li>
+                  <li>Jaune : lettre présente mais ailleurs.</li>
+                  <li>Gris : lettre absente du mot.</li>
+                  <li>
+                    Les lettres déjà trouvées réapparaissent en bleu dans la ligne
+                    suivante pour t&apos;aider.
+                  </li>
+                </ul>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowRules(false)}
+                  className="px-3 py-1 rounded-md bg-red-600 hover:bg-red-500 text-sm font-semibold"
+                >
+                  J&apos;ai compris
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
