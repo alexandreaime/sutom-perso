@@ -80,6 +80,9 @@ export default function HomePage() {
   // 12) Animation en cours ? (révélation des couleurs lettre par lettre)
   const [isRevealing, setIsRevealing] = useState(false);
 
+  // 13) Feedback visuel pour le partage
+  const [shareCopied, setShareCopied] = useState(false);
+
   //
   // === PERSISTENCE LOCALE : RECHARGER LA PARTIE DU JOUR SI ELLE EXISTE ===
   //
@@ -318,7 +321,7 @@ export default function HomePage() {
             inputRef.current?.focus();
           }
         }
-      }, i * 500);
+      }, i * 350);
     }
   }
 
@@ -344,6 +347,74 @@ export default function HomePage() {
 
     setCurrentInput((prev) => (prev + key).toUpperCase());
     inputRef.current?.focus();
+  }
+
+  //
+  // === PARTAGE : construction du texte à partager (Slack / Teams / etc.) ===
+  //
+  function buildShareText(): string {
+    if (!gameOver) return "";
+
+    const attemptsUsed = currentAttempt + 1;
+
+    const headerLines = [
+      `SUTOM perso – Jour ${dayIndex + 1}`,
+      `Mot de ${word.length} lettres`,
+      hasWon
+        ? `✅ ${attemptsUsed}/${MAX_ATTEMPTS}`
+        : `❌ ${attemptsUsed}/${MAX_ATTEMPTS}`,
+      "",
+    ];
+
+    const rows = grid
+      .slice(0, attemptsUsed)
+      .map((row) =>
+        row
+          .map((cell) => {
+            switch (cell.state) {
+              case "correct":
+                return "🟥";
+              case "present":
+                return "🟡";
+              case "absent":
+                return "🟦";
+              default:
+                return "🟦";
+            }
+          })
+          .join("")
+      )
+      .join("\n");
+
+    const link = "\n\n👉 https://sutom-perso.vercel.app/";
+
+    return [...headerLines, rows].join("\n") + link;
+  }
+
+  async function handleShare() {
+    if (!gameOver) return;
+    const text = buildShareText();
+    if (!text) return;
+
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        navigator.clipboard.writeText
+      ) {
+        await navigator.clipboard.writeText(text);
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2000);
+      } else if (typeof window !== "undefined") {
+        // Fallback si clipboard API indisponible
+        window.prompt("Copie ce texte :", text);
+      }
+    } catch (err) {
+      console.error("Erreur lors de la copie :", err);
+      if (typeof window !== "undefined") {
+        window.prompt("Copie ce texte :", text);
+      }
+    }
   }
 
   //
@@ -432,6 +503,24 @@ export default function HomePage() {
           disabled={gameOver || isRevealing}
           onKeyClick={handleKeyClick}
         />
+
+        {/* Bouton de partage du résultat */}
+        {gameOver && (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <button
+              type="button"
+              onClick={handleShare}
+              className="px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold"
+            >
+              Partager le résultat 📋
+            </button>
+            {shareCopied && (
+              <p className="text-xs text-emerald-300">
+                Résultat copié dans le presse-papiers !
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Popup Règles du jeu */}
         {showRules && (
